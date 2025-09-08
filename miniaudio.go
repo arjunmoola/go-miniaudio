@@ -1,9 +1,8 @@
 package gominiaudio
 
-// #cgo LDFLAGS: ${SRCDIR}/build/miniaudio.o -ldl -lpthread -lm
-// #include "thirdparty/miniaudio.h"
 // #include <stdlib.h>
 // #include <stdio.h>
+// #include "thirdparty/miniaudio.h"
 import "C"
 
 import (
