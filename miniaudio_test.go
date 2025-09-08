@@ -2,6 +2,7 @@ package gominiaudio
 
 import (
 	"testing"
+	"unsafe"
 )
 
 func TestEngineConfigInitialization(t *testing.T) {
@@ -141,4 +142,59 @@ func TestDecoderInitFromFile(t *testing.T) {
 
 	defer device.Uninit()
 
+}
+
+func TestContextInitialization(t *testing.T) {
+	contextConfig := ContextConfigInit()
+
+	context := NewContext()
+	defer context.Close()
+
+	err := context.Init(contextConfig)
+
+	if err != nil {
+		t.Errorf("Context.Init(*ContextConfig) failed to initialize got: %v", err)
+		t.FailNow()
+	}
+
+	var callback EnumerateDevicesCallback
+
+	ch := make(chan string)
+	done := make(chan struct{})
+
+	callback = func(c *Context, deviceType DeviceType, pinfo *DeviceInfo, userData unsafe.Pointer) bool {
+		if pinfo.IsDefault() {
+			ch <- pinfo.Name()
+		}
+		return true
+	}
+
+	var devices []string
+
+	go func() {
+		defer close(ch)
+		for {
+			select {
+			case <-done:
+				t.Log("done is closed")
+				return
+			case device := <-ch:
+				devices = append(devices, device)
+			}
+		}
+	}()
+
+	if err := context.EnumerateDevices(done, callback); err != nil {
+		t.Errorf("Context.EnumerateDevices failed got %v", err)
+		t.FailNow()
+	}
+
+	for _, device := range devices {
+		t.Log(device)
+	}
+
+	if err := context.Uninit(); err != nil {
+		t.Errorf("Context.Uninit() failed to uninitialize context got: %v", err)
+		t.FailNow()
+	}
 }

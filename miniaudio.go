@@ -3,6 +3,16 @@ package gominiaudio
 // #include <stdlib.h>
 // #include <stdio.h>
 // #include "thirdparty/miniaudio.h"
+//
+//extern ma_bool32 goDevicesCallback(void *pContext, ma_device_type deviceType, void *pInfo, void *pUserdata);
+//
+//ma_bool32 deviceEnumerationCallback(ma_context *pContext, ma_device_type deviceType, const ma_device_info* pInfo, void* pUserData) {
+//  return goDevicesCallback((void*)pContext, deviceType, (void*)pInfo, pUserData);
+//}
+//
+//ma_result go_ma_context_enumerate_devices(ma_context *pContext, void* pUserData) {
+//	return ma_context_enumerate_devices(pContext, deviceEnumerationCallback, pUserData);
+//}
 import "C"
 
 import (
@@ -10,6 +20,8 @@ import (
 	"fmt"
 	//"errors"
 )
+
+var enumerateDevicesCallback EnumerateDevicesCallback
 
 type maContainer interface {
 	cptr() unsafe.Pointer
@@ -623,6 +635,22 @@ func engineGetResourceManager(engine *Engine) *ResourceManager {
 
 func EngineGetDevice(engine *Engine) {}
 
+type DeviceInfo struct {
+	info *C.ma_device_info
+}
+
+func (d *DeviceInfo) GetDeviceId() string {
+	return ""
+}
+
+func (d *DeviceInfo) Name() string {
+	return C.GoString(&d.info.name[0])
+}
+
+func (d *DeviceInfo) IsDefault() bool {
+	return maBoolToGoBool(d.info.isDefault)
+}
+
 type DeviceConfig struct {
 	config C.struct_ma_device_config
 }
@@ -763,14 +791,53 @@ func ContextConfigInit() *ContextConfig {
 }
 
 type Context struct {
-	context C.struct_ma_context
+	context *C.struct_ma_context
+}
+
+func contextFromPtr(ptr unsafe.Pointer) *Context {
+	return &Context{
+		context: (*C.struct_ma_context)(ptr),
+	}
+}
+
+func deviceInfoFromPtr(ptr unsafe.Pointer) *DeviceInfo {
+	return &DeviceInfo{
+		info: (*C.ma_device_info)(ptr),
+	}
 }
 
 func (c *Context) cptr() *C.struct_ma_context {
 	if c == nil {
 		return nil
 	}
-	return &c.context
+	return c.context
+}
+
+func NewContext() *Context {
+	context := (*C.struct_ma_context)(C.malloc(C.sizeof_struct_ma_context))
+	return &Context{
+		context: context,
+	}
+}
+
+func (c *Context) Close() {
+	C.free(unsafe.Pointer(c.cptr()))
+}
+
+func (c *Context) Init(config *ContextConfig) error {
+	res := C.ma_context_init(nil, C.ma_uint32(0), config.cptr(), c.cptr())
+	return checkResult(res)
+}
+
+func (c *Context) Uninit() error {
+	res := C.ma_context_uninit(c.cptr())
+	return checkResult(res)
+}
+
+func (c *Context) EnumerateDevices(done chan struct{}, callback EnumerateDevicesCallback) error {
+	defer close(done)
+	enumerateDevicesCallback = callback
+	return checkResult(C.go_ma_context_enumerate_devices(c.cptr(), nil))
 }
 
 func VersionString() string {
