@@ -913,6 +913,8 @@ func (d *DeviceConfig) SetUserData(data any) {
 	switch userData := data.(type) {
 	case *Decoder:
 		userDataPtr = unsafe.Pointer(userData.cptr())
+	case *Waveform:
+		userDataPtr = unsafe.Pointer(userData.cptr())
 	}
 	if userDataPtr != nil {
 		d.config.pUserData = userDataPtr
@@ -1096,8 +1098,6 @@ func (d *Device) CalculateBufferSizeInFramesFromDescriptor(descriptor *DeviceDes
 	return int(bufferSize)
 }
 
-
-
 func (d *Device) GetDeviceType() DeviceType {
 	return DeviceType(d.device._type)
 }
@@ -1118,6 +1118,8 @@ func (d *Device) GetUserData(userData any) {
 	switch t := userData.(type) {
 	case *Decoder:
 		t.decoder = (*C.struct_ma_decoder)(d.device.pUserData)
+	case *Waveform:
+		t.wf = (*C.ma_waveform)(d.device.pUserData)
 	}
 }
 
@@ -1737,6 +1739,17 @@ func (c *NoiseConfig) cptr() *C.ma_noise_config {
 		return nil
 	}
 	return &c.config
+}
+
+func (c *NoiseConfig) GetHeapSize() (int, error) {
+	var size C.size_t
+	res := C.ma_noise_get_heap_size(c.cptr(), &size)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(size), nil
 }
 
 type Noise struct {
