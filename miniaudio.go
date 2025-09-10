@@ -43,7 +43,7 @@ func compare(a, b maContainer) bool {
 }
 
 type PCMFrameReader interface {
-	ReadPCMFrames(unsafe.Pointer, uint32) (int, error)
+	ReadPCMFrames(unsafe.Pointer, int) (int, error)
 }
 
 type MAFormat uint32
