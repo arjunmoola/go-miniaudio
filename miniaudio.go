@@ -30,6 +30,16 @@ import (
 	//"errors"
 )
 
+type Float32 C.float
+
+type Buffer[T Float32] []T
+
+func NewBuffer[T Float32](output unsafe.Pointer, n int) Buffer[T] {
+	ptr := (*T)(output)
+	buffer := unsafe.Slice(ptr, n)
+	return buffer
+}
+
 var enumerateDevicesCallback EnumerateDevicesCallback
 var dataCallback DeviceDataProcCallback
 var decaoderReadProcCallback DecoderReadProcCallback
