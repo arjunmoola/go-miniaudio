@@ -780,6 +780,29 @@ func engineGetResourceManager(engine *Engine) *ResourceManager {
 
 func EngineGetDevice(engine *Engine) {}
 
+type DataSource struct {
+	src unsafe.Pointer
+}
+
+func (d *DataSource) cptr() unsafe.Pointer {
+	if d == nil {
+		return nil
+	}
+	return d.src
+}
+
+func (d *DataSource) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_data_source_read_pcm_frames(d.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesRead), nil
+}
+
 type DeviceInfo struct {
 	info *C.ma_device_info
 }
@@ -912,7 +935,7 @@ func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
 	C.go_ma_device_config_set_data_callback(d.cptr())
 }
 
-func (d *DeviceConfig) SetUserData(data any) {
+func (d *DeviceConfig) SetUserData(data PCMFrameReader) {
 	var userDataPtr unsafe.Pointer
 	switch userData := data.(type) {
 	case *Decoder:
@@ -925,7 +948,7 @@ func (d *DeviceConfig) SetUserData(data any) {
 	}
 }
 
-func (d *DeviceConfig) GetUserData(data any) {
+func (d *DeviceConfig) GetUserData(data PCMFrameReader) {
 	switch t := data.(type) {
 	case *Decoder:
 		ptr := (*C.struct_ma_decoder)(d.config.pUserData)
@@ -1118,13 +1141,20 @@ func (d *Device) SetSampleRate(sampleRate int) {
 	d.device.sampleRate = C.ma_uint32(sampleRate)
 }
 
-func (d *Device) GetUserData(userData any) {
+func (d *Device) GetUserData(userData PCMFrameReader) {
 	switch t := userData.(type) {
 	case *Decoder:
 		t.decoder = (*C.struct_ma_decoder)(d.device.pUserData)
 	case *Waveform:
 		t.wf = (*C.ma_waveform)(d.device.pUserData)
 	}
+}
+
+func (d *Device) GetDataSource() *DataSource {
+	var dataSource DataSource
+	ptr := (*C.ma_data_source)(d.device.pUserData)
+	dataSource.src = unsafe.Pointer(ptr)
+	return &dataSource
 }
 
 type ContextConfig struct {
