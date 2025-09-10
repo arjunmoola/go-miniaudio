@@ -37,9 +37,18 @@ func goDataProcCallback(pDevice unsafe.Pointer, pOutput unsafe.Pointer, pInput u
 func goDataProcCallbackF32(pDevice unsafe.Pointer, pOutput unsafe.Pointer, pInput unsafe.Pointer, frameCount C.ma_uint32) {
 	device := deviceFromPtr(pDevice)
 	chs := device.GetPlaybackChannels()
-	outputBuf := newBuffer[Float32](pOutput, int(frameCount)*chs)
-	//inputBuf := newBuffer[Float32](pInput, int(frameCount)*chs)
-	dataCallbackF32(device, outputBuf,  nil, uint32(frameCount))
+	deviceType := device.GetDeviceType()
+
+	var outputBuf []Float32
+	var inputBuf []Float32
+
+	switch deviceType {
+	case DeviceTypePlayback:
+		outputBuf = newBuffer[Float32](pOutput, int(frameCount)*chs)
+	case DeviceTypeCapture:
+		inputBuf = newBuffer[Float32](pInput, int(frameCount)*chs)
+	}
+	dataCallbackF32(device, outputBuf,  inputBuf, uint32(frameCount))
 }
 
 func decoderFromPtr(pDecoder unsafe.Pointer) *Decoder {
