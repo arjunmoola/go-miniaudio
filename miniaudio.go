@@ -813,6 +813,20 @@ func (d *DataSource) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (i
 	return int(framesRead), nil
 }
 
+func DataSourceReadPCMFrames[T Float32](src *DataSource, framesOut []T, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	outPtr := unsafe.Pointer(&framesOut[0])
+
+	res := C.ma_data_source_read_pcm_frames(src.cptr(), outPtr, C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesRead), nil
+}
+
 type DeviceInfo struct {
 	info *C.ma_device_info
 }
