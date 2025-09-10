@@ -5,6 +5,7 @@ package gominiaudio
 // #include "thirdparty/miniaudio.h"
 //
 //extern ma_bool32 goDevicesCallback(void *pContext, ma_device_type deviceType, void *pInfo, void *pUserdata);
+//extern void goDataProcCallback(void *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount);
 //
 //ma_bool32 deviceEnumerationCallback(ma_context *pContext, ma_device_type deviceType, const ma_device_info* pInfo, void* pUserData) {
 //  return goDevicesCallback((void*)pContext, deviceType, (void*)pInfo, pUserData);
@@ -12,6 +13,14 @@ package gominiaudio
 //
 //ma_result go_ma_context_enumerate_devices(ma_context *pContext, void* pUserData) {
 //	return ma_context_enumerate_devices(pContext, deviceEnumerationCallback, pUserData);
+//}
+//
+//void maDataCallback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
+//	goDataProcCallback((void*)pDevice, pOutput, pInput, frameCount);
+//}
+//
+//ma_result go_ma_device_config_set_data_callback(ma_device_config *pDeviceConfig) {
+//	pDeviceConfig->dataCallback = maDataCallback;
 //}
 import "C"
 
@@ -22,6 +31,8 @@ import (
 )
 
 var enumerateDevicesCallback EnumerateDevicesCallback
+var dataCallback DeviceDataProcCallback
+var decaoderReadProcCallback DecoderReadProcCallback
 
 type maContainer interface {
 	cptr() unsafe.Pointer
@@ -65,7 +76,7 @@ func getMaDeviceType(d DeviceType) C.ma_device_type {
 		e = C.ma_device_type_loopback 
 	default:
 		panic("invalid device type given")
-	}
+	}	
 	return e
 }
 
@@ -299,6 +310,118 @@ func getMaPerformanceProfile(pp PerformanceProfile) C.ma_performance_profile {
 	return C.ma_performance_profile(pp)
 }
 
+type EncodingFormat int
+
+const (
+	UNKNOWN_ENC EncodingFormat = iota
+	WAV_ENC
+	FLAC_ENC
+	MP3_ENC
+	VORBIS_ENC
+)
+
+type MABackend int
+
+const (
+	WASAPI MABackend = C.ma_backend_wasapi
+	DSOUND MABackend = C.ma_backend_dsound
+	WINMM MABackend = C.ma_backend_winmm
+	COREAUDIO MABackend = C.ma_backend_coreaudio
+	SNDIO_B MABackend = C.ma_backend_sndio
+	AUDIO4 MABackend = C.ma_backend_audio4
+	OSS MABackend = C.ma_backend_oss
+	PULSEAUDIO MABackend = C.ma_backend_pulseaudio
+	JACK MABackend = C.ma_backend_jack
+	AAUDIO MABackend = C.ma_backend_aaudio
+	OPENSL MABackend = C.ma_backend_opensl
+	WEBAUDIO_B MABackend = C.ma_backend_webaudio
+	Custom_B MABackend = C.ma_backend_custom
+	Backend_NULL MABackend = C.ma_backend_custom
+)
+
+func (b MABackend) String() string {
+	return GetBackendName(b)
+}
+
+func (b MABackend) IsEnabled() bool {
+	return IsBackendEnabled(b)
+}
+
+func (b MABackend) IsLoopbackSupported() bool {
+	return IsLoopbackSupported(b)
+}
+
+func GetBackendFromName(backendName string) (MABackend, error) {
+	cstr := C.CString(backendName)
+	defer C.free(unsafe.Pointer(cstr))
+	var backend C.ma_backend
+	
+	res := C.ma_get_backend_from_name(cstr, &backend)
+
+	if err := checkResult(res); err != nil {
+		return MABackend(backend), err
+	}
+	return MABackend(backend), nil
+}
+
+func GetEnabledBackends() ([]MABackend, error) {
+	var backends []MABackend
+	buf := make([]C.ma_backend, C.MA_BACKEND_COUNT)
+	var enabledBackends C.size_t
+
+	res := C.ma_get_enabled_backends(&buf[0], C.MA_BACKEND_COUNT, &enabledBackends)
+
+	if err := checkResult(res); err != nil {
+		return backends, err
+	}
+
+	backends = make([]MABackend, 0, int(enabledBackends))
+
+	for i := range int(enabledBackends) {
+		backends = append(backends, MABackend(buf[i]))
+	}
+
+
+	return backends, nil
+}
+
+func IsBackendEnabled(backend MABackend) bool {
+	res := C.ma_is_backend_enabled(C.ma_backend(backend))
+	return maBoolToGoBool(res)
+}
+
+func IsLoopbackSupported(backend MABackend) bool {
+	res := C.ma_is_loopback_supported(C.ma_backend(backend))
+	return maBoolToGoBool(res)
+}
+
+func GetBackendName(backEnd MABackend) string {
+	charPtr := C.ma_get_backend_name(C.ma_backend(backEnd))
+	return C.GoString(charPtr)
+}
+
+type Channel uint8
+
+//Utilities
+
+func CalculateBufferSizeInMillisecondsFromFrames(bufferSizeInFrames uint32, sampleRate uint32) uint32 {
+	res := C.ma_calculate_buffer_size_in_milliseconds_from_frames(C.ma_uint32(bufferSizeInFrames), C.ma_uint32(sampleRate))
+	return uint32(res)
+}
+
+func CalculateBufferSizeInFramesFromMilliseconds(bufferSize uint32, sampleRate uint32) uint32 {
+	res := C.ma_calculate_buffer_size_in_frames_from_milliseconds(C.ma_uint32(bufferSize), C.ma_uint32(sampleRate))
+	return uint32(res)
+}
+
+func CopyPCMFrames(dst unsafe.Pointer, src unsafe.Pointer, frameCount uint64, format Format, channels uint32) {
+	C.ma_copy_pcm_frames(dst, src, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+}
+
+func SilencePCMFrames(p unsafe.Pointer, frameCount uint64, format Format, channels uint32) {
+	C.ma_silence_pcm_frames(p, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+}
+
 type MiniAudioErr struct {
 	res C.ma_result
 }
@@ -337,6 +460,24 @@ func toMABool32(b bool) C.ma_bool32 {
 		return C.ma_bool32(1)
 	}
 	return C.ma_bool32(0)
+}
+
+func toMABool8(b bool) C.ma_bool8 {
+	if b {
+		return C.ma_bool8(1)
+	}
+	return C.ma_bool8(0)
+}
+
+func maBool8ToGoBool(b C.ma_bool8) bool {
+	switch b {
+	case C.ma_bool8(1):
+		return true
+	case C.ma_bool8(0):
+		return false
+	default:
+		panic("unknown value for ma_bool8")
+	}
 }
 
 func maBoolToGoBool(b C.ma_bool32) bool {
@@ -639,6 +780,13 @@ type DeviceInfo struct {
 	info *C.ma_device_info
 }
 
+func (d *DeviceInfo) cptr() *C.ma_device_info {
+	if d == nil {
+		return nil
+	}
+	return d.info
+}
+
 func (d *DeviceInfo) GetDeviceId() string {
 	return ""
 }
@@ -649,6 +797,17 @@ func (d *DeviceInfo) Name() string {
 
 func (d *DeviceInfo) IsDefault() bool {
 	return maBoolToGoBool(d.info.isDefault)
+}
+
+type DeviceDescriptor struct {
+	des *C.ma_device_descriptor
+}
+
+func (d *DeviceDescriptor) cptr() *C.ma_device_descriptor {
+	if d == nil {
+		return nil
+	}
+	return d.des
 }
 
 type DeviceConfig struct {
@@ -693,6 +852,60 @@ func (d *DeviceConfig) SetSampleRate(sampleRate int) {
 
 func (d *DeviceConfig) GetSampleRate() int {
 	return int(d.config.sampleRate)
+}
+
+func (d *DeviceConfig) GetPeriods() int {
+	return int(d.config.periods)
+}
+
+func (d *DeviceConfig) SetPeriods(periods int) {
+	d.config.periods = C.ma_uint32(periods)
+}
+
+func (d *DeviceConfig) GetPerformanceProfile() PerformanceProfile {
+	return PerformanceProfile(d.config.performanceProfile)
+}
+
+func (d *DeviceConfig) SetPerformanceProfile(pp PerformanceProfile) {
+	d.config.performanceProfile = getMaPerformanceProfile(pp)
+}
+
+func (d *DeviceConfig) SetNoPreSilencedOutputBuffer(b bool) {
+	d.config.noPreSilencedOutputBuffer = toMABool8(b)
+}
+
+func (d *DeviceConfig) GetNoPreSilencedOutputBuffer() bool {
+	return maBool8ToGoBool(d.config.noPreSilencedOutputBuffer)
+}
+
+func (d *DeviceConfig) SetNoClip(b bool) {
+	d.config.noClip = toMABool8(b)
+}
+
+func (d *DeviceConfig) GetNoClip() bool {
+	return maBool8ToGoBool(d.config.noClip)
+}
+
+func (d *DeviceConfig) GetNoDisabledDenormals() bool {
+	return maBool8ToGoBool(d.config.noClip)
+}
+
+func (d *DeviceConfig) SetNoDisabledDenormals(b bool) {
+	d.config.noDisableDenormals = toMABool8(b)
+}
+
+func (d *DeviceConfig) GetNoFixedSizedCallback() bool {
+	return maBool8ToGoBool(d.config.noFixedSizedCallback)
+}
+
+func (d *DeviceConfig) SetNoFixedSizedCallback(b bool) {
+	d.config.noFixedSizedCallback = toMABool8(b)
+}
+
+//TODO: DeviceConfig DataCallback and notification callback
+func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
+	dataCallback = callback
+	C.go_ma_device_config_set_data_callback(d.cptr())
 }
 
 func (d *DeviceConfig) SetUserData(data any) {
@@ -760,6 +973,35 @@ func deviceInit(context *Context, config *DeviceConfig, device *Device) error {
 	return checkResult(res)
 }
 
+func toMaBackendArray(backends []MABackend) []C.ma_backend {
+	maBackends := make([]C.ma_backend, 0, len(backends))
+	for _, backend := range backends {
+		maBackends = append(maBackends, C.ma_backend(backend))
+	}
+	return maBackends
+}
+
+func (d *Device) InitEx(backends []MABackend, contextConfig *ContextConfig, deviceConfig *DeviceConfig) error {
+	return deviceInitEx(backends, contextConfig, deviceConfig, d)
+}
+
+func deviceInitEx(backEnds []MABackend, contextConfig *ContextConfig, deviceConfig *DeviceConfig, device *Device) error {
+	contextConfigPtr := contextConfig.cptr()
+	deviceConfigPtr := deviceConfig.cptr()
+	devicePtr := device.cptr()
+	maBackends := toMaBackendArray(backEnds)
+	backendcount := len(maBackends)
+	var res C.ma_result
+
+	if backendcount == 0 {
+		res =  C.ma_device_init_ex(nil, 0, contextConfigPtr, deviceConfigPtr, devicePtr)
+	} else {
+		res = C.ma_device_init_ex(&maBackends[0], C.ma_uint32(backendcount), contextConfigPtr, deviceConfigPtr, devicePtr)
+	}
+
+	return checkResult(res)
+}
+
 func (d *Device) Uninit() {
 	deviceUninit(d)
 }
@@ -770,6 +1012,113 @@ func DeviceUninit(device *Device) {
 
 func deviceUninit(device *Device) {
 	C.ma_device_uninit(device.cptr())
+}
+
+func (d *Device) GetContext() *Context {
+	ptr := C.ma_device_get_context(d.cptr())
+	return &Context{
+		context: ptr,
+	}
+}
+
+func (d *Device) GetDeviceInfo(deviceType DeviceType, deviceInfo *DeviceInfo) error {
+	res := C.ma_device_get_info(d.cptr(), C.ma_device_type(deviceType), deviceInfo.cptr())
+	return checkResult(res)
+}
+
+func (d *Device) GetName(deviceType DeviceType) (string, error) {
+	nameCap := C.MA_MAX_DEVICE_NAME_LENGTH+1
+	nameBuf := make([]byte, nameCap)
+	charPtr := (*C.char)(C.CBytes(nameBuf))
+	defer C.free(unsafe.Pointer(charPtr))
+	res := C.ma_device_get_name(d.cptr(), C.ma_device_type(deviceType), charPtr, C.size_t(nameCap), nil)
+	if err := checkResult(res); err != nil {
+		return "", err
+	}
+	return string(nameBuf), nil
+}
+
+func (d *Device) Start() error {
+	res := C.ma_device_start(d.cptr())
+	return checkResult(res)
+}
+
+func (d *Device) Stop() error {
+	res := C.ma_device_stop(d.cptr())
+	return checkResult(res)
+}
+
+func (d *Device) IsStarted() bool {
+	res := C.ma_device_is_started(d.cptr())
+	return maBoolToGoBool(res)
+}
+
+func (d *Device) GetState() DeviceState {
+	state := C.ma_device_get_state(d.cptr())
+	return DeviceState(state)
+}
+
+func (d *Device) SetMasterVolume(volume float32) error {
+	res := C.ma_device_set_master_volume(d.cptr(), C.float(volume))
+	return checkResult(res)
+}
+
+func (d *Device) GetMasterVolume() (float32, error) {
+	var volume C.float
+	res := C.ma_device_get_master_volume(d.cptr(), &volume)
+	if err := checkResult(res); err != nil {
+		return float32(volume), err
+	}
+	return float32(volume), nil
+}
+
+func (d *Device) SetMasterVolumeDB(gainDB float32) error {
+	res := C.ma_device_set_master_volume_db(d.cptr(), C.float(gainDB))
+	return checkResult(res)
+}
+
+func (d *Device) GetMasterVolumeDB() (float32, error) {
+	var volume C.float
+	res := C.ma_device_get_master_volume_db(d.cptr(), &volume)
+	if err := checkResult(res); err != nil {
+		return float32(volume), err
+	}
+	return float32(volume), nil
+}
+
+func (d *Device) HandleBackendDataCallback(pOutput unsafe.Pointer, pInput unsafe.Pointer, frameCount uint32) error {
+	res := C.ma_device_handle_backend_data_callback(d.cptr(), pOutput, pInput, C.ma_uint32(frameCount))
+	return checkResult(res)
+}
+
+func (d *Device) CalculateBufferSizeInFramesFromDescriptor(descriptor *DeviceDescriptor, nativeSampleRate uint32, performanceProfile PerformanceProfile) int {
+	bufferSize := C.ma_calculate_buffer_size_in_frames_from_descriptor(descriptor.cptr(), C.ma_uint32(nativeSampleRate), C.ma_performance_profile(performanceProfile))
+	return int(bufferSize)
+}
+
+
+
+func (d *Device) GetDeviceType() DeviceType {
+	return DeviceType(d.device._type)
+}
+
+func (d *Device) SetDeviceType(deviceType DeviceType) {
+	d.device._type = C.ma_device_type(deviceType)
+}
+
+func (d *Device) GetSampleRate() int {
+	return int(d.device.sampleRate)
+}
+
+func (d *Device) SetSampleRate(sampleRate int) {
+	d.device.sampleRate = C.ma_uint32(sampleRate)
+}
+
+func (d *Device) GetUserData(userData any) {
+	switch t := userData.(type) {
+	case *Decoder:
+		t.decoder = (*C.struct_ma_decoder)(d.device.pUserData)
+	}
 }
 
 type ContextConfig struct {
@@ -1037,6 +1386,361 @@ func (d *Decoder) GetOutputChannels() int {
 
 func (d *Decoder) GetOutputSampleRate() int {
 	return int(d.decoder.outputSampleRate)
+}
+
+func (d *Decoder) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_decoder_read_pcm_frames(d.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return int(framesRead), err
+	}
+	return int(framesRead), nil
+}
+
+func (d *Decoder) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_decoder_seek_to_pcm_frame(d.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
+}
+
+type DecoderDataFormat struct {
+	Format Format
+	Channels int
+	SampleRate int
+	ChannelMap Channel
+}
+
+func (d *Decoder) GetDataFormat(channelMapCap uint) (DecoderDataFormat, error) {
+	var dataFormat DecoderDataFormat
+
+	var pFormat C.ma_format
+	var pChannels C.ma_uint32
+	var pSampleRate C.ma_uint32
+	var pChannelMap C.ma_channel
+
+	res := C.ma_decoder_get_data_format(d.cptr(), &pFormat, &pChannels, &pSampleRate, &pChannelMap, C.size_t(channelMapCap))
+
+	if err := checkResult(res); err != nil {
+		return dataFormat, err
+	}
+
+	dataFormat.Format = Format(pFormat)
+	dataFormat.Channels = int(pChannels)
+	dataFormat.SampleRate = int(pSampleRate)
+	dataFormat.ChannelMap = Channel(pChannelMap)
+
+	return dataFormat, nil
+}
+
+func (d *Decoder) GetCursorInPCMFrames() (int, error) {
+	var pCursor C.ma_uint64
+
+	res := C.ma_decoder_get_cursor_in_pcm_frames(d.cptr(), &pCursor)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(pCursor), nil
+}
+
+func (d *Decoder) GetLengthInPCMFrames() (int, error) {
+	var length C.ma_uint64
+
+	res := C.ma_decoder_get_length_in_pcm_frames(d.cptr(), &length)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(length), nil
+}
+
+func (d *Decoder) GetAvailableFrames() (int, error) {
+	var availableFrames C.ma_uint64
+
+	res := C.ma_decoder_get_available_frames(d.cptr(), &availableFrames)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(availableFrames), nil
+}
+
+type EncoderConfig struct {
+	config C.ma_encoder_config
+}
+
+func (e *EncoderConfig) cptr() *C.ma_encoder_config {
+	if e == nil {
+		return nil
+	}
+	return &e.config
+}
+
+func EncoderConfigInit(encodingFormat EncodingFormat, format Format, channels int, sampleRate int) *EncoderConfig {
+	config := C.ma_encoder_config_init(C.ma_encoding_format(encodingFormat), C.ma_format(format), C.ma_uint32(channels), C.ma_uint32(sampleRate))
+	return &EncoderConfig{
+		config: config,
+	}
+}
+
+type Encoder struct {
+	encoder *C.struct_ma_encoder
+}
+
+func (e *Encoder) cptr() *C.struct_ma_encoder {
+	if e == nil {
+		return nil
+	}
+	return e.encoder
+}
+
+func NewEncoder() *Encoder {
+	encoder := (*C.struct_ma_encoder)(C.malloc(C.sizeof_struct_ma_encoder))
+	return &Encoder{
+		encoder: encoder,
+	}
+}
+
+func (e *Encoder) Close() {
+	C.free(unsafe.Pointer(e.cptr()))
+}
+
+func (e *Encoder) InitFile(filePath string, config *EncoderConfig) error {
+	cPath := C.CString(filePath)
+	defer C.free(unsafe.Pointer(cPath))
+	res := C.ma_encoder_init_file(cPath, config.cptr(), e.cptr())
+	return checkResult(res)
+}
+
+func (e *Encoder) Uninit() {
+	C.ma_encoder_uninit(e.cptr())
+}
+
+func (e *Encoder) WritePCMFrames(pFramesIn unsafe.Pointer, frameCount int) (int, error) {
+	var framesWritten C.ma_uint64
+
+	res := C.ma_encoder_write_pcm_frames(e.cptr(), pFramesIn, C.ma_uint64(frameCount), &framesWritten)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesWritten), nil
+}
+
+type WaveformType int
+
+const (
+	SINE WaveformType = iota
+	SQUARE
+	TRIANGLE
+	SAWTOOTH
+)
+
+type WaveformConfig struct {
+	config C.ma_waveform_config
+}
+
+func (c *WaveformConfig) cptr() *C.ma_waveform_config {
+	if c == nil {
+		return nil
+	}
+	return &c.config
+}
+
+func WaveformConfigInit(format Format, channels uint, sampleRate uint, wfType WaveformType, amplitude float64, frequency float64) *WaveformConfig {
+	config := C.ma_waveform_config_init(C.ma_format(format), C.ma_uint32(channels), C.ma_uint32(sampleRate), C.ma_waveform_type(wfType), C.double(amplitude), C.double(frequency))
+	return &WaveformConfig{
+		config: config,
+	}
+}
+
+type Waveform struct {
+	wf *C.ma_waveform
+}
+
+func NewWaveform() *Waveform {
+	wf := (*C.ma_waveform)(C.malloc(C.sizeof_ma_waveform))
+	return &Waveform{
+		wf: wf,
+	}
+}
+
+func (wf *Waveform) cptr() *C.ma_waveform {
+	if wf == nil {
+		return nil
+	}
+	return wf.wf
+}
+
+func (wf *Waveform) Close() {
+	C.free(unsafe.Pointer(wf.cptr()))
+}
+
+func (wf *Waveform) Init(config *WaveformConfig) error {
+	res := C.ma_waveform_init(config.cptr(), wf.cptr())
+	return checkResult(res)
+}
+
+func (wf *Waveform) Uninit() {
+	C.ma_waveform_uninit(wf.cptr())
+}
+
+func (wf *Waveform) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_waveform_read_pcm_frames(wf.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesRead), nil
+}
+
+func (wf *Waveform) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_waveform_seek_to_pcm_frame(wf.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
+}
+
+func (wf *Waveform) SetAmplitude(amplitude float64) error {
+	res := C.ma_waveform_set_amplitude(wf.cptr(), C.double(amplitude))
+	return checkResult(res)
+}
+
+func (wf *Waveform) SetFrequency(frequency float64) error {
+	res := C.ma_waveform_set_frequency(wf.cptr(), C.double(frequency))
+	return checkResult(res)
+}
+
+func (wf *Waveform) SetType(wfType WaveformType) error {
+	res := C.ma_waveform_set_type(wf.cptr(), C.ma_waveform_type(wfType))
+	return checkResult(res)
+}
+
+func (wf *Waveform) SetSampleRate(sampleRate int) error {
+	res := C.ma_waveform_set_sample_rate(wf.cptr(), C.ma_uint32(sampleRate))
+	return checkResult(res)
+}
+
+type PulsewaveConfig struct {
+	config C.ma_pulsewave_config
+}
+
+func PulsewaveConfigInit(format Format, channels int, sampleRate int, dutyCycle float64, amplitude float64, frequency float64) *PulsewaveConfig {
+	config := C.ma_pulsewave_config_init(C.ma_format(format), C.ma_uint32(channels), C.ma_uint32(sampleRate), C.double(dutyCycle), C.double(amplitude), C.double(frequency))
+	return &PulsewaveConfig{
+		config: config,
+	}
+}
+
+func (c *PulsewaveConfig) cptr() *C.ma_pulsewave_config {
+	if c == nil {
+		return nil
+	}
+	return &c.config
+}
+
+type Pulsewave struct {
+	pw *C.ma_pulsewave
+}
+
+func NewPulsewave() *Pulsewave {
+	pw := (*C.ma_pulsewave)(C.malloc(C.sizeof_ma_pulsewave))
+	return &Pulsewave{
+		pw: pw,
+	}
+}
+
+func (pw *Pulsewave) cptr() *C.ma_pulsewave {
+	if pw == nil {
+		return nil
+	}
+	return pw.pw
+}
+
+func (pw *Pulsewave) Close() {
+	C.free(unsafe.Pointer(pw.cptr()))
+}
+
+func (pw *Pulsewave) Init(config *PulsewaveConfig) error {
+	res := C.ma_pulsewave_init(config.cptr(), pw.cptr())
+	return checkResult(res)
+}
+
+func (pw *Pulsewave) Uninit() {
+	C.ma_pulsewave_uninit(pw.cptr())
+}
+
+func (pw *Pulsewave) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_pulsewave_read_pcm_frames(pw.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesRead), nil
+}
+
+func (pw *Pulsewave) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_pulsewave_seek_to_pcm_frame(pw.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
+}
+
+func (pw *Pulsewave) SetAmplitude(amplitude float64) error {
+	res := C.ma_pulsewave_set_amplitude(pw.cptr(), C.double(amplitude))
+	return checkResult(res)
+}
+
+func (pw *Pulsewave) SetFrequency(frequency float64) error {
+	res := C.ma_pulsewave_set_frequency(pw.cptr(), C.double(frequency))
+	return checkResult(res)
+}
+
+func (pw *Pulsewave) SetSampleRate(sampleRate int) error {
+	res := C.ma_pulsewave_set_sample_rate(pw.cptr(), C.ma_uint32(sampleRate))
+	return checkResult(res)
+}
+
+func (pw *Pulsewave) SetDutyCycle(dutyCycle float64) error {
+	res := C.ma_pulsewave_set_duty_cycle(pw.cptr(), C.double(dutyCycle))
+	return checkResult(res)
+}
+
+type NoiseType int
+
+const (
+	WHITE NoiseType = iota
+	PINK
+	BROWNIAN
+)
+
+type NoiseConfig struct {
+	config C.ma_noise_config
+}
+
+func NoiseConfigInit(format Format, channels int, noiseType NoiseType, seed int, amplitude float64) *NoiseConfig {
+	config := C.ma_noise_config_init(C.ma_format(format), C.ma_uint32(channels), C.ma_noise_type(noiseType), C.ma_int32(seed), C.double(amplitude))
+	return &NoiseConfig {
+		config: config,
+	}
+}
+
+func (c *NoiseConfig) cptr() *C.ma_noise_config {
+	if c == nil {
+		return nil
+	}
+	return &c.config
+}
+
+type Noise struct {
+	noise *C.ma_noise
 }
 
 type Fence struct {

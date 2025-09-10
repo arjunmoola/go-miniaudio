@@ -8,6 +8,8 @@ import (
 )
 
 type EnumerateDevicesCallback func(context *Context, deviceType DeviceType, info *DeviceInfo, userData unsafe.Pointer) bool
+type DeviceDataProcCallback func(device *Device, output unsafe.Pointer, input unsafe.Pointer, frameCount uint32)
+type DecoderReadProcCallback func(decoder *Decoder, bufferOut unsafe.Pointer, bytesToRead uint, bytesRead *uint) error
 
 //export goDevicesCallback
 func goDevicesCallback(contextPtr unsafe.Pointer, deviceType C.ma_device_type, infoPtr unsafe.Pointer, userData unsafe.Pointer) C.ma_bool32 {
@@ -16,4 +18,26 @@ func goDevicesCallback(contextPtr unsafe.Pointer, deviceType C.ma_device_type, i
 	dt := DeviceType(deviceType)
 	res := enumerateDevicesCallback(c, dt, info, userData)
 	return toMABool32(res) 
+}
+
+func deviceFromPtr(pDevice unsafe.Pointer) *Device {
+	return &Device{
+		device: (*C.struct_ma_device)(pDevice),
+	}
+}
+
+//export goDataProcCallback
+func goDataProcCallback(pDevice unsafe.Pointer, pOutput unsafe.Pointer, pInput unsafe.Pointer, frameCount C.ma_uint32) {
+	device := deviceFromPtr(pDevice)
+	dataCallback(device, pOutput,  pInput, uint32(frameCount))
+}
+
+func decoderFromPtr(pDecoder unsafe.Pointer) *Decoder {
+	return &Decoder{
+		decoder: (*C.struct_ma_decoder)(pDecoder),
+	}
+}
+
+//export goDecoderReadProcCallback
+func goDecoderReadProcCallback(pDecoder unsafe.Pointer, pBufferOut unsafe.Pointer, bytesToRead C.size_t, pBytesRead *C.size_t) {
 }

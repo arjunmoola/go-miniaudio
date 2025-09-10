@@ -198,3 +198,20 @@ func TestContextInitialization(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func TestGetEnabledBackends(t *testing.T) {
+	backends, err := GetEnabledBackends()
+
+	if err != nil {
+		t.Errorf("got error: %v", err)
+		t.FailNow()
+	}
+
+	t.Log(backends, len(backends))
+
+	//backendNames := make([]string, 0, len(backends))
+
+	for _, back := range backends {
+		t.Log(back.String(), back.IsEnabled(), back.IsLoopbackSupported())
+	}
+}
