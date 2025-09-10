@@ -42,6 +42,10 @@ func compare(a, b maContainer) bool {
 	return a.cptr() == b.cptr()
 }
 
+type PCMFrameReader interface {
+	ReadPCMFrames(unsafe.Pointer, uint32) (int, error)
+}
+
 type MAFormat uint32
 
 type DeviceState int
