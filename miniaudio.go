@@ -6,6 +6,7 @@ package gominiaudio
 //
 //extern ma_bool32 goDevicesCallback(void *pContext, ma_device_type deviceType, void *pInfo, void *pUserdata);
 //extern void goDataProcCallback(void *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount);
+//extern void goDataProcCallbackF32(void *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount);
 //
 //ma_bool32 deviceEnumerationCallback(ma_context *pContext, ma_device_type deviceType, const ma_device_info* pInfo, void* pUserData) {
 //  return goDevicesCallback((void*)pContext, deviceType, (void*)pInfo, pUserData);
@@ -19,8 +20,16 @@ package gominiaudio
 //	goDataProcCallback((void*)pDevice, pOutput, pInput, frameCount);
 //}
 //
+//void maDataCallbackF32(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
+//	goDataProcCallbackF32((void*)pDevice, pOutput, pInput, frameCount);
+//}
+//
 //ma_result go_ma_device_config_set_data_callback(ma_device_config *pDeviceConfig) {
 //	pDeviceConfig->dataCallback = maDataCallback;
+//}
+//
+//ma_result go_ma_device_config_set_data_callbackF32(ma_device_config *pDeviceConfig) {
+//	pDeviceConfig->dataCallback = maDataCallbackF32;
 //}
 import "C"
 
@@ -30,19 +39,24 @@ import (
 	//"errors"
 )
 
+type SampleSize interface {
+	Float64|Float32
+}
+
 type Float32 C.float
+type Float64 C.double
 
-type Buffer[T Float32] []T
+type Buffer[T SampleSize] []T
 
-func NewBuffer[T Float32](output unsafe.Pointer, n int) Buffer[T] {
-	ptr := (*T)(output)
-	buffer := unsafe.Slice(ptr, n)
+func newBuffer[T SampleSize](output unsafe.Pointer, n int) Buffer[T] {
+	buffer := unsafe.Slice((*T)(output), n)
 	return buffer
 }
 
 var enumerateDevicesCallback EnumerateDevicesCallback
 var dataCallback DeviceDataProcCallback
 var decaoderReadProcCallback DecoderReadProcCallback
+var dataCallbackF32 DeviceDataProcCallbackF32[Float32]
 
 type maContainer interface {
 	cptr() unsafe.Pointer
@@ -959,6 +973,11 @@ func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
 	C.go_ma_device_config_set_data_callback(d.cptr())
 }
 
+func (d *DeviceConfig) SetDataCallbackF32(callback DeviceDataProcCallbackF32[Float32]) {
+	dataCallbackF32 = callback
+	C.go_ma_device_config_set_data_callbackF32(d.cptr())
+}
+
 func (d *DeviceConfig) SetUserData(data PCMFrameReader) {
 	var userDataPtr unsafe.Pointer
 	switch userData := data.(type) {
@@ -1163,6 +1182,14 @@ func (d *Device) GetSampleRate() int {
 
 func (d *Device) SetSampleRate(sampleRate int) {
 	d.device.sampleRate = C.ma_uint32(sampleRate)
+}
+
+func (d *Device) GetPlaybackFormat() Format {
+	return Format(d.device.playback.format)
+}
+
+func (d *Device) GetPlaybackChannels() int {
+	return int(d.device.playback.channels)
 }
 
 func (d *Device) GetUserData(userData PCMFrameReader) {
