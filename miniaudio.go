@@ -39,12 +39,17 @@ import (
 	//"errors"
 )
 
+type Float32 C.float
+type Float64 C.double
+type Int32 C.ma_int32
+type Int64 C.ma_int64
+type UInt32 C.ma_uint32
+type UInt64 C.ma_uint64
+
 type SampleSize interface {
 	Float64|Float32
 }
 
-type Float32 C.float
-type Float64 C.double
 
 type Buffer[T SampleSize] []T
 
@@ -487,12 +492,39 @@ func CalculateBufferSizeInFramesFromMilliseconds(bufferSize uint32, sampleRate u
 	return uint32(res)
 }
 
-func CopyPCMFrames(dst unsafe.Pointer, src unsafe.Pointer, frameCount uint64, format Format, channels uint32) {
-	C.ma_copy_pcm_frames(dst, src, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+func CopyPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int) {
+	pDst := bufferPointer(dst)
+	pSrc := bufferPointer(src)
+	C.ma_copy_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
 }
 
-func SilencePCMFrames(p unsafe.Pointer, frameCount uint64, format Format, channels uint32) {
-	C.ma_silence_pcm_frames(p, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+func SilencePCMFrames[T SampleSize](dst []T, frameCount int, format Format, channels int) {
+	pDst := bufferPointer(dst)
+	C.ma_silence_pcm_frames(pDst, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+}
+
+func ClipSamplesF32(dst []Float32, src []Float32, count int) {
+	pDst := (*C.float)(bufferPointer(dst))
+	pSrc := (*C.float)(bufferPointer(src))
+	C.ma_clip_samples_f32(pDst, pSrc, C.ma_uint64(count))
+}
+
+func ClipPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int) {
+	pDst := bufferPointer(dst)
+	pSrc := bufferPointer(src)
+	C.ma_clip_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+}
+
+func ApplyVolumeFactorF32(dst []Float32, sampleCount int, factor float32) {
+	pDst := (*C.float)(bufferPointer(dst))
+	C.ma_apply_volume_factor_f32(pDst, C.ma_uint64(sampleCount), C.float(factor))
+}
+
+func MixPCMFramesF32(dst []Float32, src []Float32, frameCount int, channels int, volume float32) error {
+	pDst := (*C.float)(bufferPointer(dst))
+	pSrc := (*C.float)(bufferPointer(src))
+	res := C.ma_mix_pcm_frames_f32(pDst, pSrc, C.ma_uint64(frameCount), C.ma_uint32(channels), C.float(volume))
+	return checkResult(res)
 }
 
 type MiniAudioErr struct {
