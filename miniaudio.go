@@ -520,7 +520,7 @@ func ApplyVolumeFactorF32(dst []Float32, sampleCount int, factor float32) {
 	C.ma_apply_volume_factor_f32(pDst, C.ma_uint64(sampleCount), C.float(factor))
 }
 
-func ApplyVolumeFactorPCMFrames[T SampleSize](frames []Float32, frameCount int, format Format,  channels int, factor float32) {
+func ApplyVolumeFactorPCMFrames[T SampleSize](frames []T, frameCount int, format Format,  channels int, factor float32) {
 	pFrames := bufferPointer(frames)
 	C.ma_apply_volume_factor_pcm_frames(pFrames, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(factor))
 }
