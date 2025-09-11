@@ -520,11 +520,32 @@ func ApplyVolumeFactorF32(dst []Float32, sampleCount int, factor float32) {
 	C.ma_apply_volume_factor_f32(pDst, C.ma_uint64(sampleCount), C.float(factor))
 }
 
+func ApplyVolumeFactorPCMFrames[T SampleSize](frames []Float32, frameCount int, format Format,  channels int, factor float32) {
+	pFrames := bufferPointer(frames)
+	C.ma_apply_volume_factor_pcm_frames(pFrames, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(factor))
+}
+
 func MixPCMFramesF32(dst []Float32, src []Float32, frameCount int, channels int, volume float32) error {
 	pDst := (*C.float)(bufferPointer(dst))
 	pSrc := (*C.float)(bufferPointer(src))
 	res := C.ma_mix_pcm_frames_f32(pDst, pSrc, C.ma_uint64(frameCount), C.ma_uint32(channels), C.float(volume))
 	return checkResult(res)
+}
+
+func CopyApplyVolumeClipPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int, volume float32) {
+	pDst := bufferPointer(dst)
+	pSrc := bufferPointer(src)
+	C.ma_copy_and_apply_volume_and_clip_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(volume))
+}
+
+func VolumeLinearToDb(factor float32) float32 {
+	res := C.ma_volume_linear_to_db(C.float(factor))
+	return float32(res)
+}
+
+func VolumeDbToLinear(gain float32) float32 {
+	res := C.ma_volume_db_to_linear(C.float(gain))
+	return float32(res)
 }
 
 type MiniAudioErr struct {
