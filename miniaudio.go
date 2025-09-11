@@ -53,6 +53,10 @@ func newBuffer[T SampleSize](output unsafe.Pointer, n int) Buffer[T] {
 	return buffer
 }
 
+func bufferPointer[T SampleSize](buf []T) unsafe.Pointer {
+	return unsafe.Pointer(&buf[0])
+}
+
 var enumerateDevicesCallback EnumerateDevicesCallback
 var dataCallback DeviceDataProcCallback
 var decaoderReadProcCallback DecoderReadProcCallback
@@ -430,6 +434,47 @@ func GetBackendName(backEnd MABackend) string {
 
 type Channel uint8
 
+type Event struct {
+	event *C.ma_event
+}
+
+func NewEvent() *Event {
+	event := (*C.ma_event)(C.malloc(C.sizeof_ma_event))
+	return &Event{
+		event: event,
+	}
+}
+
+func (e *Event) cptr() *C.ma_event {
+	if e == nil {
+		return nil
+	}
+	return e.event
+}
+
+func (e *Event) Close() {
+	C.free(unsafe.Pointer(e.cptr()))
+}
+
+func (e *Event) Init() error {
+	res := C.ma_event_init(e.cptr())
+	return checkResult(res)
+}
+
+func (e *Event) Uninit() {
+	C.ma_event_uninit(e.cptr())
+}
+
+func (e *Event) Wait() error {
+	res := C.ma_event_wait(e.cptr())
+	return checkResult(res)
+}
+
+func (e *Event) Signal() error {
+	res := C.ma_event_signal(e.cptr())
+	return checkResult(res)
+}
+
 //Utilities
 
 func CalculateBufferSizeInMillisecondsFromFrames(bufferSizeInFrames uint32, sampleRate uint32) uint32 {
@@ -804,6 +849,42 @@ func engineGetResourceManager(engine *Engine) *ResourceManager {
 
 func EngineGetDevice(engine *Engine) {}
 
+type DataConverterConfig struct {
+	config C.ma_data_converter_config
+}
+
+func DataConverterConfigInitDefault() *DataConverterConfig {
+	config := C.ma_data_converter_config_init_default()
+	return &DataConverterConfig{
+		config: config,
+	}
+}
+
+func DataConverterConfigInit(formatIn Format, formatOut Format, channelsIn int, channelsOut int, sampleRateIn int, sampleRateOut int) *DataConverterConfig {
+	config := C.ma_data_converter_config_init(C.ma_format(formatIn), C.ma_format(formatOut), C.ma_uint32(channelsIn), C.ma_uint32(channelsOut), C.ma_uint32(sampleRateIn), C.ma_uint32(sampleRateOut))
+	return &DataConverterConfig{
+		config: config,
+	}
+}
+
+type DataConverter struct {
+	c *C.ma_data_converter
+}
+
+type ConvertFramesArg struct {
+	Ptr unsafe.Pointer
+	FramesCount int
+	Format Format
+	Channels int
+	SampleRate int
+}
+
+func ConvertFrames(out ConvertFramesArg, in ConvertFramesArg) int {
+	res := C.ma_convert_frames(out.Ptr, C.ma_uint64(out.FramesCount), C.ma_format(out.Format), C.ma_uint32(out.Channels), C.ma_uint32(out.SampleRate), in.Ptr, C.ma_uint64(in.FramesCount), C.ma_format(in.Format), C.ma_uint32(in.Channels), C.ma_uint32(in.SampleRate))
+
+	return int(res)
+}
+
 type DataSource struct {
 	src unsafe.Pointer
 }
@@ -815,10 +896,10 @@ func (d *DataSource) cptr() unsafe.Pointer {
 	return d.src
 }
 
-func (d *DataSource) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+func (d *DataSource) ReadPCMFrames(framesOut []Float32, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_data_source_read_pcm_frames(d.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_data_source_read_pcm_frames(d.cptr(), bufferPointer(framesOut), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err
@@ -827,18 +908,204 @@ func (d *DataSource) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (i
 	return int(framesRead), nil
 }
 
-func DataSourceReadPCMFrames[T Float32](src *DataSource, framesOut []T, frameCount int) (int, error) {
+func DataSourceReadPCMFrames[T SampleSize](src *DataSource, framesOut []T, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	outPtr := unsafe.Pointer(&framesOut[0])
-
-	res := C.ma_data_source_read_pcm_frames(src.cptr(), outPtr, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_data_source_read_pcm_frames(src.cptr(), bufferPointer(framesOut), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err
 	}
 
 	return int(framesRead), nil
+}
+
+func (d *DataSource) SeekPCMFrames(frameCount int) (int, error) {
+	var framesSeeked C.ma_uint64
+
+	res := C.ma_data_source_seek_pcm_frames(d.cptr(), C.ma_uint64(frameCount), &framesSeeked)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesSeeked), nil
+}
+
+func (d *DataSource) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_data_source_seek_to_pcm_frame(d.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
+}
+
+func (d *DataSource) SeekSeconds(secondCount float32) (float32, error) {
+	var secondsSeeked C.float
+
+	res := C.ma_data_source_seek_seconds(d.cptr(), C.float(secondCount), &secondsSeeked)
+
+	if err := checkResult(res); err != nil {
+		return float32(secondsSeeked), err
+	}
+
+	return float32(secondsSeeked), nil
+}
+
+func (d *DataSource) SeekToSecond(seekPointInSeconds float32) error {
+	res := C.ma_data_source_seek_to_second(d.cptr(), C.float(seekPointInSeconds))
+	return checkResult(res)
+}
+
+type DataSourceDataFormat struct {
+	Format Format
+	Channels int
+	SampleRate int
+	ChannelMap Channel
+	ChannelMapCap int
+}
+
+func (d *DataSource) GetDataFormat(src *DataSource, channelMapCap int) (DataSourceDataFormat, error) {
+	var dataFormat DataSourceDataFormat
+
+	var format C.ma_format
+	var channels C.ma_uint32
+	var sampleRate C.ma_uint32
+	var channelMap C.ma_channel
+
+	res := C.ma_data_source_get_data_format(d.cptr(), &format, &channels, &sampleRate, &channelMap, C.size_t(channelMapCap))
+
+	if err := checkResult(res); err != nil {
+		return dataFormat, err
+	}
+
+	dataFormat.Format = Format(format)
+	dataFormat.Channels = int(channels)
+	dataFormat.SampleRate = int(sampleRate)
+	dataFormat.ChannelMapCap = channelMapCap
+
+
+	return dataFormat, nil
+}
+
+func (d *DataSource) GetCursorInSeconds() (float32, error) {
+	var pCursor C.float
+
+	res := C.ma_data_source_get_cursor_in_seconds(d.cptr(), &pCursor)
+
+	if err := checkResult(res); err != nil {
+		return float32(pCursor), err
+	}
+
+	return float32(pCursor), nil
+}
+
+func (d *DataSource) GetLengthInSeconds() (float32, error) {
+	var pLength C.float
+
+	res := C.ma_data_source_get_length_in_seconds(d.cptr(), &pLength)
+
+	if err := checkResult(res); err != nil {
+		return float32(pLength), err
+	}
+
+	return float32(pLength), nil
+}
+
+func (d *DataSource) GetCursorInPCMFrames() (int, error) {
+	var pCursor C.ma_uint64
+
+	res := C.ma_data_source_get_cursor_in_pcm_frames(d.cptr(), &pCursor)
+	
+	if err := checkResult(res); err != nil {
+		return int(pCursor), nil
+	}
+	return int(pCursor), nil
+}
+
+func (d *DataSource) GetLengthInPCMFrames() (int, error) {
+	var pLength C.ma_uint64
+
+	res := C.ma_data_source_get_length_in_pcm_frames(d.cptr(), &pLength)
+
+	if err := checkResult(res); err != nil {
+		return int(pLength), err
+	}
+
+	return int(pLength), nil
+}
+
+func (d *DataSource) SetLooping(isLooping bool) error {
+	res := C.ma_data_source_set_looping(d.cptr(), toMABool32(isLooping))
+	return checkResult(res)
+}
+
+func (d *DataSource) IsLooping() bool {
+	res := C.ma_data_source_is_looping(d.cptr())
+	return maBoolToGoBool(res)
+}
+
+func (d *DataSource) SetRangeInPCMFrames(begInFrames, endInFrames int) error {
+	res := C.ma_data_source_set_range_in_pcm_frames(d.cptr(), C.ma_uint64(begInFrames), C.ma_uint64(endInFrames))
+	return checkResult(res)
+}
+
+type PCMFrameRange struct {
+	Start, End int
+}
+
+func (d *DataSource) GetRangeInPCMFrameRange() PCMFrameRange {
+	var rng PCMFrameRange
+
+	var start, end C.ma_uint64
+
+	C.ma_data_source_get_range_in_pcm_frames(d.cptr(), &start, &end)
+
+	rng.Start = int(start)
+	rng.End = int(end)
+
+	return rng
+}
+
+func (d *DataSource) SetLoopPointInPCMFrames(start, end int) error {
+	res := C.ma_data_source_set_loop_point_in_pcm_frames(d.cptr(), C.ma_uint64(start), C.ma_uint64(end))
+	return checkResult(res)
+}
+
+type PCMFrameLoopPoint struct {
+	Start, End int
+}
+
+func (d *DataSource) GetLoopPointInPCMFrames() PCMFrameLoopPoint {
+	var lp PCMFrameLoopPoint
+	var start, end C.ma_uint64
+	C.ma_data_source_get_loop_point_in_pcm_frames(d.cptr(), &start, &end)
+
+	lp.Start = int(start)
+	lp.End = int(end)
+
+	return lp
+}
+
+func (d *DataSource) SetCurrent(current *DataSource) error {
+	res := C.ma_data_source_set_current(d.cptr(), current.cptr())
+	return checkResult(res)
+}
+
+func (d *DataSource) GetCurrent() *DataSource {
+	ptr := C.ma_data_source_get_current(d.cptr())
+	return &DataSource{
+		src: ptr,
+	}
+}
+
+func (d *DataSource) SetNext(nextSource *DataSource) error {
+	res := C.ma_data_source_set_next(d.cptr(), nextSource.cptr())
+	return checkResult(res)
+}
+
+func (d *DataSource) GetNext() *DataSource {
+	ptr := C.ma_data_source_get_next(d.cptr())
+	return &DataSource{
+		src: ptr,
+	}
 }
 
 type DeviceInfo struct {
