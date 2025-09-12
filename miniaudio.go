@@ -41,10 +41,6 @@ import (
 
 type Float32 C.float
 type Float64 C.double
-type Int32 C.ma_int32
-type Int64 C.ma_int64
-type UInt32 C.ma_uint32
-type UInt64 C.ma_uint64
 
 type SampleSize interface {
 	Float64|Float32
@@ -949,10 +945,10 @@ func (d *DataSource) cptr() unsafe.Pointer {
 	return d.src
 }
 
-func (d *DataSource) ReadPCMFrames(framesOut []Float32, frameCount int) (int, error) {
+func (d *DataSource) ReadPCMFrames(framesOut unsafe.Pointer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_data_source_read_pcm_frames(d.cptr(), bufferPointer(framesOut), C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_data_source_read_pcm_frames(d.cptr(), framesOut, C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err
