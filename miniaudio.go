@@ -1167,6 +1167,22 @@ func (d *DataSource) SetNext(nextSource *DataSource) error {
 	return checkResult(res)
 }
 
+func DataSourceSetNext(current, next any) error {
+	res := C.ma_data_source_set_next(getDataSourcePtr(current), getDataSourcePtr(next))
+	return checkResult(res)
+}
+
+func getDataSourcePtr(d any) unsafe.Pointer {
+	var ptr unsafe.Pointer
+	switch ds :=  d.(type) {
+	case *Decoder:
+		ptr = unsafe.Pointer(ds.cptr())
+	case *Waveform:
+		ptr = unsafe.Pointer(ds.cptr())
+	}
+	return ptr
+}
+
 func (d *DataSource) GetNext() *DataSource {
 	ptr := C.ma_data_source_get_next(d.cptr())
 	return &DataSource{
@@ -1901,12 +1917,6 @@ func (d *Decoder) Close() {
 	C.free(unsafe.Pointer(ptr))
 }
 
-func (d *Decoder) DataSource() *DataSource {
-	return &DataSource{
-		src: unsafe.Pointer(d.cptr()),
-	}
-}
-
 func (d *Decoder) InitFile(filePath string, config *DecoderConfig) error {
 	return decoderInitFile(filePath, config, d)
 }
@@ -2130,12 +2140,6 @@ func (wf *Waveform) cptr() *C.ma_waveform {
 		return nil
 	}
 	return wf.wf
-}
-
-func (wf *Waveform) DataSource() *DataSource {
-	return &DataSource{
-		src: unsafe.Pointer(wf.cptr()),
-	}
 }
 
 func (wf *Waveform) Close() {
