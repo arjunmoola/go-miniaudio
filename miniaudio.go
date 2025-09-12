@@ -41,17 +41,35 @@ import (
 
 type Float32 C.float
 type Float64 C.double
+type UInt8 C.ma_uint8
+type UInt16 C.ma_uint16
+type UInt32 C.ma_uint32
+type UInt64 C.ma_uint64
 
 type SampleSize interface {
-	Float64|Float32
+	Float64|Float32|UInt8|UInt16|UInt32|UInt64
 }
 
+type Buffer struct {
+	buffer unsafe.Pointer
+}
 
-type Buffer[T SampleSize] []T
+func newBuffer(ptr unsafe.Pointer) *Buffer {
+	return &Buffer{
+		buffer: ptr,
+	}
+}
 
-func newBuffer[T SampleSize](output unsafe.Pointer, n int) Buffer[T] {
-	buffer := unsafe.Slice((*T)(output), n)
-	return buffer
+func (b *Buffer) cptr() unsafe.Pointer {
+	if b == nil {
+		return nil
+	}
+	return b.buffer
+}
+
+func Slice[T SampleSize](b *Buffer, n int) []T {
+	ptr := b.cptr()
+	return unsafe.Slice((*T)(ptr), n)
 }
 
 func bufferPointer[T SampleSize](buf []T) unsafe.Pointer {
@@ -61,7 +79,7 @@ func bufferPointer[T SampleSize](buf []T) unsafe.Pointer {
 var enumerateDevicesCallback EnumerateDevicesCallback
 var dataCallback DeviceDataProcCallback
 var decaoderReadProcCallback DecoderReadProcCallback
-var dataCallbackF32 DeviceDataProcCallbackF32[Float32]
+var dataCallbackF32 DeviceDataProcCallback2[Float32]
 
 type maContainer interface {
 	cptr() unsafe.Pointer
@@ -72,7 +90,7 @@ func compare(a, b maContainer) bool {
 }
 
 type PCMFrameReader interface {
-	ReadPCMFrames(unsafe.Pointer, int) (int, error)
+	ReadPCMFrames(*Buffer, int) (int, error)
 }
 
 type MAFormat uint32
@@ -945,10 +963,10 @@ func (d *DataSource) cptr() unsafe.Pointer {
 	return d.src
 }
 
-func (d *DataSource) ReadPCMFrames(framesOut unsafe.Pointer, frameCount int) (int, error) {
+func (d *DataSource) ReadPCMFrames(framesOut *Buffer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_data_source_read_pcm_frames(d.cptr(), framesOut, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_data_source_read_pcm_frames(d.cptr(), framesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err
@@ -1301,7 +1319,7 @@ func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
 	C.go_ma_device_config_set_data_callback(d.cptr())
 }
 
-func (d *DeviceConfig) SetDataCallbackF32(callback DeviceDataProcCallbackF32[Float32]) {
+func (d *DeviceConfig) SetDataCallbackF32(callback DeviceDataProcCallback2[Float32]) {
 	dataCallbackF32 = callback
 	C.go_ma_device_config_set_data_callbackF32(d.cptr())
 }
@@ -1803,10 +1821,10 @@ func (d *Decoder) GetOutputSampleRate() int {
 	return int(d.decoder.outputSampleRate)
 }
 
-func (d *Decoder) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+func (d *Decoder) ReadPCMFrames(pFramesOut *Buffer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_decoder_read_pcm_frames(d.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_decoder_read_pcm_frames(d.cptr(), pFramesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return int(framesRead), err
@@ -2005,10 +2023,10 @@ func (wf *Waveform) Uninit() {
 	C.ma_waveform_uninit(wf.cptr())
 }
 
-func (wf *Waveform) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+func (wf *Waveform) ReadPCMFrames(pFramesOut *Buffer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_waveform_read_pcm_frames(wf.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_waveform_read_pcm_frames(wf.cptr(), pFramesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err
@@ -2091,10 +2109,10 @@ func (pw *Pulsewave) Uninit() {
 	C.ma_pulsewave_uninit(pw.cptr())
 }
 
-func (pw *Pulsewave) ReadPCMFrames(pFramesOut unsafe.Pointer, frameCount int) (int, error) {
+func (pw *Pulsewave) ReadPCMFrames(pFramesOut *Buffer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
-	res := C.ma_pulsewave_read_pcm_frames(pw.cptr(), pFramesOut, C.ma_uint64(frameCount), &framesRead)
+	res := C.ma_pulsewave_read_pcm_frames(pw.cptr(), pFramesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
 
 	if err := checkResult(res); err != nil {
 		return 0, err

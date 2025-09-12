@@ -8,9 +8,10 @@ import (
 )
 
 type EnumerateDevicesCallback func(context *Context, deviceType DeviceType, info *DeviceInfo, userData unsafe.Pointer) bool
-type DeviceDataProcCallback func(device *Device, output unsafe.Pointer, input unsafe.Pointer, frameCount uint32)
+type DeviceDataProcCallback func(device *Device, output *Buffer, input *Buffer, frameCount uint32)
 type DecoderReadProcCallback func(decoder *Decoder, bufferOut unsafe.Pointer, bytesToRead uint, bytesRead *uint) error
-type DeviceDataProcCallbackF32[T SampleSize]func(device *Device, output []T, input []T, frameCount uint32)
+type DeviceDataProcCallback2[T SampleSize]func(device *Device, output *Buffer, input *Buffer, frameCount uint32)
+type DeviceDataProcCallback3 func(device *Device, output *Buffer, input *Buffer, frameCount uint32)
 
 //export goDevicesCallback
 func goDevicesCallback(contextPtr unsafe.Pointer, deviceType C.ma_device_type, infoPtr unsafe.Pointer, userData unsafe.Pointer) C.ma_bool32 {
@@ -30,24 +31,16 @@ func deviceFromPtr(pDevice unsafe.Pointer) *Device {
 //export goDataProcCallback
 func goDataProcCallback(pDevice unsafe.Pointer, pOutput unsafe.Pointer, pInput unsafe.Pointer, frameCount C.ma_uint32) {
 	device := deviceFromPtr(pDevice)
-	dataCallback(device, pOutput,  pInput, uint32(frameCount))
+	outputBuf := newBuffer(pOutput)
+	inputBuf := newBuffer(pInput)
+	dataCallback(device, outputBuf,  inputBuf, uint32(frameCount))
 }
 
 //export goDataProcCallbackF32
 func goDataProcCallbackF32(pDevice unsafe.Pointer, pOutput unsafe.Pointer, pInput unsafe.Pointer, frameCount C.ma_uint32) {
 	device := deviceFromPtr(pDevice)
-	chs := device.GetPlaybackChannels()
-	deviceType := device.GetDeviceType()
-
-	var outputBuf []Float32
-	var inputBuf []Float32
-
-	switch deviceType {
-	case DeviceTypePlayback:
-		outputBuf = newBuffer[Float32](pOutput, int(frameCount)*chs)
-	case DeviceTypeCapture:
-		inputBuf = newBuffer[Float32](pInput, int(frameCount)*chs)
-	}
+	outputBuf := newBuffer(pOutput)
+	inputBuf := newBuffer(pInput)
 	dataCallbackF32(device, outputBuf,  inputBuf, uint32(frameCount))
 }
 
