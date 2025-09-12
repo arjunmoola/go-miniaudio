@@ -1901,6 +1901,12 @@ func (d *Decoder) Close() {
 	C.free(unsafe.Pointer(ptr))
 }
 
+func (d *Decoder) DataSource() *DataSource {
+	return &DataSource{
+		src: unsafe.Pointer(d.cptr()),
+	}
+}
+
 func (d *Decoder) InitFile(filePath string, config *DecoderConfig) error {
 	return decoderInitFile(filePath, config, d)
 }
@@ -2124,6 +2130,12 @@ func (wf *Waveform) cptr() *C.ma_waveform {
 		return nil
 	}
 	return wf.wf
+}
+
+func (wf *Waveform) DataSource() *DataSource {
+	return &DataSource{
+		src: unsafe.Pointer(wf.cptr()),
+	}
 }
 
 func (wf *Waveform) Close() {
