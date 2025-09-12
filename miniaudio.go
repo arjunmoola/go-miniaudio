@@ -79,15 +79,15 @@ func bufferPointer[T SampleSize](buf []T) unsafe.Pointer {
 var enumerateDevicesCallback EnumerateDevicesCallback
 var dataCallback DeviceDataProcCallback
 var decaoderReadProcCallback DecoderReadProcCallback
-var dataCallbackF32 DeviceDataProcCallback2[Float32]
 
-type maContainer interface {
-	cptr() unsafe.Pointer
+type maContainer[T any] interface {
+	cptr() T
 }
 
-func compare(a, b maContainer) bool {
+func compare[T comparable](a, b maContainer[T]) bool {
 	return a.cptr() == b.cptr()
 }
+
 
 type PCMFrameReader interface {
 	ReadPCMFrames(*Buffer, int) (int, error)
@@ -1028,16 +1028,8 @@ func (d *DataSource) SeekToSecond(seekPointInSeconds float32) error {
 	return checkResult(res)
 }
 
-type DataSourceDataFormat struct {
-	Format Format
-	Channels int
-	SampleRate int
-	ChannelMap Channel
-	ChannelMapCap int
-}
-
-func (d *DataSource) GetDataFormat(src *DataSource, channelMapCap int) (DataSourceDataFormat, error) {
-	var dataFormat DataSourceDataFormat
+func (d *DataSource) GetDataFormat(src *DataSource, channelMapCap int) (DataFormat, error) {
+	var dataFormat DataFormat
 
 	var format C.ma_format
 	var channels C.ma_uint32
@@ -1312,11 +1304,6 @@ func (d *DeviceConfig) SetNoFixedSizedCallback(b bool) {
 func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
 	dataCallback = callback
 	C.go_ma_device_config_set_data_callback(d.cptr())
-}
-
-func (d *DeviceConfig) SetDataCallbackF32(callback DeviceDataProcCallback2[Float32]) {
-	dataCallbackF32 = callback
-	C.go_ma_device_config_set_data_callbackF32(d.cptr())
 }
 
 func (d *DeviceConfig) SetUserData(data PCMFrameReader) {
@@ -1621,6 +1608,158 @@ func VersionString() string {
 	return C.GoString(C.ma_version_string())
 }
 
+type ResourceManagerPipelineNotifications struct {
+	n C.ma_resource_manager_pipeline_notifications
+}
+ 
+func ResourceManagerPipelineNotificationsInit() *ResourceManagerPipelineNotifications {
+	n := C.ma_resource_manager_pipeline_notifications_init()
+	return &ResourceManagerPipelineNotifications{
+		n: n,
+	}
+}
+
+func (n *ResourceManagerPipelineNotifications) cptr() *C.ma_resource_manager_pipeline_notifications {
+	if n == nil {
+		return nil
+	}
+	return &n.n
+}
+
+type ResourceManagerDataBuffer struct {
+	buffer *C.struct_ma_resource_manager_data_buffer
+}
+
+func NewResourceManagerDataBuffer() *ResourceManagerDataBuffer {
+	buffer := (*C.struct_ma_resource_manager_data_buffer)(C.malloc(C.sizeof_struct_ma_resource_manager_data_buffer))
+	return &ResourceManagerDataBuffer{
+		buffer: buffer,
+	}
+}
+
+func (b *ResourceManagerDataBuffer) cptr() *C.struct_ma_resource_manager_data_buffer {
+	if b == nil {
+		return nil
+	}
+	return b.buffer
+}
+
+func (b *ResourceManagerDataBuffer) Close() {
+	C.free(unsafe.Pointer(b.cptr()))
+}
+
+func (b *ResourceManagerDataBuffer) Init(m *ResourceManager, filePath string, flags uint, n *ResourceManagerPipelineNotifications) error {
+	pFilePath := C.CString(filePath)
+	defer C.free(unsafe.Pointer(pFilePath))
+	res := C.ma_resource_manager_data_buffer_init(m.cptr(), pFilePath, C.ma_uint32(flags), n.cptr(), b.cptr())
+	return checkResult(res)
+}
+
+func (b *ResourceManagerDataBuffer) InitCopy(m *ResourceManager, existingBuffer *ResourceManagerDataBuffer) error {
+	res := C.ma_resource_manager_data_buffer_init_copy(m.cptr(), existingBuffer.cptr(), b.cptr())
+	return checkResult(res)
+}
+
+func (b *ResourceManagerDataBuffer) Uninit() error {
+	res := C.ma_resource_manager_data_buffer_uninit(b.cptr())
+	return checkResult(res)
+}
+
+func (b *ResourceManagerDataBuffer) ReadPCMFrames(framesOut *Buffer, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_resource_manager_data_buffer_read_pcm_frames(b.cptr(), framesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return int(framesRead), err
+	}
+
+	return int(framesRead), nil
+}
+
+func (b *ResourceManagerDataBuffer) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_resource_manager_data_buffer_seek_to_pcm_frame(b.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
+}
+
+type DataFormat struct {
+	Format Format
+	Channels int
+	SampleRate int
+	ChannelMap Channel
+	ChannelMapCap int
+}
+
+func (b *ResourceManagerDataBuffer) GetDataFormat(channelMapCap int) (DataFormat, error) {
+	var dataFormat DataFormat
+
+	var pFormat C.ma_format
+	var pChannels C.ma_uint32
+	var pSampleRate C.ma_uint32
+	var pChannelMap C.ma_channel
+
+	res := C.ma_resource_manager_data_buffer_get_data_format(b.cptr(), &pFormat, &pChannels, &pSampleRate, &pChannelMap, C.size_t(channelMapCap))
+
+	if err := checkResult(res); err != nil {
+		return dataFormat, err
+	}
+
+	dataFormat.Format = Format(pFormat)
+	dataFormat.Channels = int(pChannels)
+	dataFormat.SampleRate = int(pSampleRate)
+	dataFormat.ChannelMap = Channel(pChannelMap)
+
+	return dataFormat, nil
+}
+
+func (b *ResourceManagerDataBuffer) GetCursorInPCMFrames() (int, error) {
+	var cursor C.ma_uint64
+
+	res := C.ma_resource_manager_data_buffer_get_cursor_in_pcm_frames(b.cptr(), &cursor)
+
+	if err := checkResult(res); err != nil {
+		return int(cursor), err
+	}
+
+	return int(cursor), nil
+}
+
+func (b *ResourceManagerDataBuffer) GetLengthInPCMFrames() (int, error) {
+	var length C.ma_uint64
+
+	res := C.ma_resource_manager_data_buffer_get_length_in_pcm_frames(b.cptr(), &length)
+
+	if err := checkResult(res); err != nil {
+		return int(length), err
+	}
+
+	return int(length), nil
+}
+
+func (b *ResourceManagerDataBuffer) Result() error {
+	res := C.ma_resource_manager_data_buffer_result(b.cptr())
+	return checkResult(res)
+}
+
+func (b *ResourceManagerDataBuffer) SetLooping(isLooping bool) error {
+	res := C.ma_resource_manager_data_buffer_set_looping(b.cptr(), toMABool32(isLooping))
+	return checkResult(res)
+}
+
+func (b *ResourceManagerDataBuffer) IsLooping() bool {
+	res := C.ma_resource_manager_data_buffer_is_looping(b.cptr())
+	return maBoolToGoBool(res)
+}
+
+func (b *ResourceManagerDataBuffer) GetAvailableFrames() (int, error) {
+	var frames C.ma_uint64
+	res := C.ma_resource_manager_data_buffer_get_available_frames(b.cptr(), &frames)
+	if err := checkResult(res); err != nil {
+		return int(frames), err
+	}
+	return int(frames), nil
+}
+
 type ResourceManagerConfig struct {
 	config C.ma_resource_manager_config
 }
@@ -1663,42 +1802,18 @@ func (m *ResourceManager) Close() {
 }
 
 func (m *ResourceManager) Init(config *ResourceManagerConfig) error {
-	return resourceManagerInit(config, m)
-}
-
-func ResourceManagerInit(config *ResourceManagerConfig, manager *ResourceManager) error {
-	return resourceManagerInit(config, manager)
-}
-
-func resourceManagerInit(config *ResourceManagerConfig, manager *ResourceManager) error {
 	configPtr := config.cptr()
-	managerPtr := manager.cptr()
+	managerPtr := m.cptr()
 	res := C.ma_resource_manager_init(configPtr, managerPtr)
 	return checkResult(res)
 }
 
 func (m *ResourceManager) Uninit() {
-	resourceManagerUninit(m)
-}
-
-func ResourceManagerUninit(manager *ResourceManager) {
-	resourceManagerUninit(manager)
-}
-
-func resourceManagerUninit(manager *ResourceManager) {
-	C.ma_resource_manager_uninit(manager.cptr())
+	C.ma_resource_manager_uninit(m.cptr())
 }
 
 func (m *ResourceManager) RegisterFile(filePath string, flags uint32) error {
-	return resourceManagerRegisterFile(m, filePath, flags)
-}
-
-func ResourceManagerRegisterFile(manager *ResourceManager, filePath string, flags uint32) error {
-	return resourceManagerRegisterFile(manager, filePath, flags)
-}
-
-func resourceManagerRegisterFile(manager *ResourceManager, filePath string, flags uint32) error {
-	ptr := manager.cptr()
+	ptr := m.cptr()
 	maFlags := C.ma_uint32(flags)
 	path := C.CString(filePath)
 	defer C.free(unsafe.Pointer(path))
@@ -1707,18 +1822,31 @@ func resourceManagerRegisterFile(manager *ResourceManager, filePath string, flag
 }
 
 func (m *ResourceManager) UnregisterFile(filePath string ) error {
-	return resourceManagerUnregisterFile(m, filePath)
-}
-
-func ResourceManagerUnregisterFile(manager *ResourceManager, filePath string) error {
-	return resourceManagerUnregisterFile(manager, filePath)
-}
-
-func resourceManagerUnregisterFile(manager *ResourceManager, filePath string) error {
-	ptr := manager.cptr()
+	ptr := m.cptr()
 	path := C.CString(filePath)
 	defer C.free(unsafe.Pointer(path))
 	res := C.ma_resource_manager_unregister_file(ptr, path)
+	return checkResult(res)
+}
+
+func (m *ResourceManager) RegisterDecodedData(name string, pData unsafe.Pointer, frameCount int, format Format, channels int, sampleRate int) error {
+	pName := C.CString(name)
+	defer C.free(unsafe.Pointer(pName))
+	res := C.ma_resource_manager_register_decoded_data(m.cptr(), pName, pData, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.ma_uint32(sampleRate))
+	return checkResult(res)
+}
+
+func (m *ResourceManager) RegisterEncodedData(name string, pData unsafe.Pointer, sizeInBytes int) error {
+	pName := C.CString(name)
+	defer C.free(unsafe.Pointer(pName))
+	res := C.ma_resource_manager_register_encoded_data(m.cptr(), pName, pData, C.size_t(sizeInBytes))
+	return checkResult(res)
+}
+
+func (m *ResourceManager) UnregisterData(name string) error {
+	pName := C.CString(name)
+	defer C.free(unsafe.Pointer(pName))
+	res := C.ma_resource_manager_unregister_data(m.cptr(), pName)
 	return checkResult(res)
 }
 
@@ -1832,15 +1960,8 @@ func (d *Decoder) SeekToPCMFrame(frameIndex int) error {
 	return checkResult(res)
 }
 
-type DecoderDataFormat struct {
-	Format Format
-	Channels int
-	SampleRate int
-	ChannelMap Channel
-}
-
-func (d *Decoder) GetDataFormat(channelMapCap uint) (DecoderDataFormat, error) {
-	var dataFormat DecoderDataFormat
+func (d *Decoder) GetDataFormat(channelMapCap uint) (DataFormat, error) {
+	var dataFormat DataFormat
 
 	var pFormat C.ma_format
 	var pChannels C.ma_uint32
