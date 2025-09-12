@@ -506,15 +506,12 @@ func CalculateBufferSizeInFramesFromMilliseconds(bufferSize uint32, sampleRate u
 	return uint32(res)
 }
 
-func CopyPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int) {
-	pDst := bufferPointer(dst)
-	pSrc := bufferPointer(src)
-	C.ma_copy_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+func CopyPCMFrames(dst, src *Buffer, frameCount int, format Format, channels int) {
+	C.ma_copy_pcm_frames(dst.cptr(), src.cptr(), C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
 }
 
-func SilencePCMFrames[T SampleSize](dst []T, frameCount int, format Format, channels int) {
-	pDst := bufferPointer(dst)
-	C.ma_silence_pcm_frames(pDst, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
+func SilencePCMFrames(dst *Buffer, frameCount int, format Format, channels int) {
+	C.ma_silence_pcm_frames(dst.cptr(), C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
 }
 
 func ClipSamplesF32(dst []Float32, src []Float32, count int) {
@@ -523,9 +520,9 @@ func ClipSamplesF32(dst []Float32, src []Float32, count int) {
 	C.ma_clip_samples_f32(pDst, pSrc, C.ma_uint64(count))
 }
 
-func ClipPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int) {
-	pDst := bufferPointer(dst)
-	pSrc := bufferPointer(src)
+func ClipPCMFrames(dst *Buffer, src *Buffer, frameCount int, format Format, channels int) {
+	pDst := dst.cptr()
+	pSrc := src.cptr()
 	C.ma_clip_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels))
 }
 
@@ -534,8 +531,8 @@ func ApplyVolumeFactorF32(dst []Float32, sampleCount int, factor float32) {
 	C.ma_apply_volume_factor_f32(pDst, C.ma_uint64(sampleCount), C.float(factor))
 }
 
-func ApplyVolumeFactorPCMFrames[T SampleSize](frames []T, frameCount int, format Format,  channels int, factor float32) {
-	pFrames := bufferPointer(frames)
+func ApplyVolumeFactorPCMFrames(frames *Buffer, frameCount int, format Format,  channels int, factor float32) {
+	pFrames := frames.cptr()
 	C.ma_apply_volume_factor_pcm_frames(pFrames, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(factor))
 }
 
@@ -546,10 +543,8 @@ func MixPCMFramesF32(dst []Float32, src []Float32, frameCount int, channels int,
 	return checkResult(res)
 }
 
-func CopyApplyVolumeClipPCMFrames[T SampleSize](dst []T, src []T, frameCount int, format Format, channels int, volume float32) {
-	pDst := bufferPointer(dst)
-	pSrc := bufferPointer(src)
-	C.ma_copy_and_apply_volume_and_clip_pcm_frames(pDst, pSrc, C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(volume))
+func CopyApplyVolumeClipPCMFrames(dst *Buffer, src *Buffer, frameCount int, format Format, channels int, volume float32) {
+	C.ma_copy_and_apply_volume_and_clip_pcm_frames(dst.cptr(), src.cptr(), C.ma_uint64(frameCount), C.ma_format(format), C.ma_uint32(channels), C.float(volume))
 }
 
 func VolumeLinearToDb(factor float32) float32 {
