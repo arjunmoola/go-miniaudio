@@ -957,6 +957,18 @@ func (d *DataSource) ReadPCMFrames(framesOut unsafe.Pointer, frameCount int) (in
 	return int(framesRead), nil
 }
 
+func (d *DataSource) ReadPCMFramesF32(framesOut []Float32, frameCount int) (int, error) {
+	var framesRead C.ma_uint64
+
+	res := C.ma_data_source_read_pcm_frames(d.cptr(), bufferPointer(framesOut), C.ma_uint64(frameCount), &framesRead)
+
+	if err := checkResult(res); err != nil {
+		return 0, err
+	}
+
+	return int(framesRead), nil
+}
+
 func DataSourceReadPCMFrames[T SampleSize](src *DataSource, framesOut []T, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 
