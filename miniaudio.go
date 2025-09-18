@@ -958,18 +958,6 @@ func (d *DataSource) cptr() unsafe.Pointer {
 	return d.src
 }
 
-func (d *DataSource) ReadPCMFrames(framesOut *Buffer, frameCount int) (int, error) {
-	var framesRead C.ma_uint64
-
-	res := C.ma_data_source_read_pcm_frames(d.cptr(), framesOut.cptr(), C.ma_uint64(frameCount), &framesRead)
-
-	if err := checkResult(res); err != nil {
-		return 0, err
-	}
-
-	return int(framesRead), nil
-}
-
 func DataSourceReadPCMFrames(d any, framesOut *Buffer, frameCount int) (int, error) {
 	var framesRead C.ma_uint64
 	ptr := getDataSourcePtr(d)
@@ -997,18 +985,6 @@ func DataSourceReadPCMFramesF32(d any, framesOut []Float32, frameCount int) (int
 	return int(framesRead), nil
 }
 
-func (d *DataSource) ReadPCMFramesF32(framesOut []Float32, frameCount int) (int, error) {
-	var framesRead C.ma_uint64
-
-	res := C.ma_data_source_read_pcm_frames(d.cptr(), bufferPointer(framesOut), C.ma_uint64(frameCount), &framesRead)
-
-	if err := checkResult(res); err != nil {
-		return 0, err
-	}
-
-	return int(framesRead), nil
-}
-
 func DataSourceSeekPCMFrames(d any, frameCount int) (int, error) {
 	ptr := getDataSourcePtr(d)
 
@@ -1023,26 +999,9 @@ func DataSourceSeekPCMFrames(d any, frameCount int) (int, error) {
 	return int(framesSeeked), nil
 }
 
-func (d *DataSource) SeekPCMFrames(frameCount int) (int, error) {
-	var framesSeeked C.ma_uint64
-
-	res := C.ma_data_source_seek_pcm_frames(d.cptr(), C.ma_uint64(frameCount), &framesSeeked)
-
-	if err := checkResult(res); err != nil {
-		return 0, err
-	}
-
-	return int(framesSeeked), nil
-}
-
 func DataSourceSeekToPCMFrame(d any, frameIndex int) error {
 	ptr := getDataSourcePtr(d)
 	res := C.ma_data_source_seek_to_pcm_frame(ptr, C.ma_uint64(frameIndex))
-	return checkResult(res)
-}
-
-func (d *DataSource) SeekToPCMFrame(frameIndex int) error {
-	res := C.ma_data_source_seek_to_pcm_frame(d.cptr(), C.ma_uint64(frameIndex))
 	return checkResult(res)
 }
 
@@ -1059,26 +1018,9 @@ func DataSourceSeekSeconds(d any, secondCount float32) (float32, error) {
 	return float32(secondsSeeked), nil
 }
 
-func (d *DataSource) SeekSeconds(secondCount float32) (float32, error) {
-	var secondsSeeked C.float
-
-	res := C.ma_data_source_seek_seconds(d.cptr(), C.float(secondCount), &secondsSeeked)
-
-	if err := checkResult(res); err != nil {
-		return float32(secondsSeeked), err
-	}
-
-	return float32(secondsSeeked), nil
-}
-
 func DataSourceSeekToSecond(d any, seekPointInSeconds float32) error {
 	ptr := getDataSourcePtr(d)
 	res := C.ma_data_source_seek_to_second(ptr, C.float(seekPointInSeconds))
-	return checkResult(res)
-}
-
-func (d *DataSource) SeekToSecond(seekPointInSeconds float32) error {
-	res := C.ma_data_source_seek_to_second(d.cptr(), C.float(seekPointInSeconds))
 	return checkResult(res)
 }
 
@@ -1107,47 +1049,12 @@ func DataSourceGetDataFormat(d any, channelMapCap int) (DataFormat, error) {
 	return dataFormat, nil
 }
 
-func (d *DataSource) GetDataFormat(src *DataSource, channelMapCap int) (DataFormat, error) {
-	var dataFormat DataFormat
-
-	var format C.ma_format
-	var channels C.ma_uint32
-	var sampleRate C.ma_uint32
-	var channelMap C.ma_channel
-
-	res := C.ma_data_source_get_data_format(d.cptr(), &format, &channels, &sampleRate, &channelMap, C.size_t(channelMapCap))
-
-	if err := checkResult(res); err != nil {
-		return dataFormat, err
-	}
-
-	dataFormat.Format = Format(format)
-	dataFormat.Channels = int(channels)
-	dataFormat.SampleRate = int(sampleRate)
-	dataFormat.ChannelMapCap = channelMapCap
-
-
-	return dataFormat, nil
-}
-
 func DataSourceGetCursorInSeconds(d any) (float32, error) {
 	ptr := getDataSourcePtr(d)
 
 	var pCursor C.float
 
 	res := C.ma_data_source_get_cursor_in_seconds(ptr, &pCursor)
-
-	if err := checkResult(res); err != nil {
-		return float32(pCursor), err
-	}
-
-	return float32(pCursor), nil
-}
-
-func (d *DataSource) GetCursorInSeconds() (float32, error) {
-	var pCursor C.float
-
-	res := C.ma_data_source_get_cursor_in_seconds(d.cptr(), &pCursor)
 
 	if err := checkResult(res); err != nil {
 		return float32(pCursor), err
@@ -1171,35 +1078,12 @@ func DataSourceGetLengthInSeconds(d any) (float32, error) {
 
 }
 
-func (d *DataSource) GetLengthInSeconds() (float32, error) {
-	var pLength C.float
-
-	res := C.ma_data_source_get_length_in_seconds(d.cptr(), &pLength)
-
-	if err := checkResult(res); err != nil {
-		return float32(pLength), err
-	}
-
-	return float32(pLength), nil
-}
-
 func DataSourceGetCursorInPCMFrames(d any) (int, error) {
 	ptr := getDataSourcePtr(d)
 
 	var pCursor C.ma_uint64
 
 	res := C.ma_data_source_get_cursor_in_pcm_frames(ptr, &pCursor)
-	
-	if err := checkResult(res); err != nil {
-		return int(pCursor), nil
-	}
-	return int(pCursor), nil
-}
-
-func (d *DataSource) GetCursorInPCMFrames() (int, error) {
-	var pCursor C.ma_uint64
-
-	res := C.ma_data_source_get_cursor_in_pcm_frames(d.cptr(), &pCursor)
 	
 	if err := checkResult(res); err != nil {
 		return int(pCursor), nil
@@ -1221,28 +1105,12 @@ func DataSourceGetLengthInPCMFrames(d any) (int, error) {
 	return int(pLength), nil
 }
 
-func (d *DataSource) GetLengthInPCMFrames() (int, error) {
-	var pLength C.ma_uint64
-
-	res := C.ma_data_source_get_length_in_pcm_frames(d.cptr(), &pLength)
-
-	if err := checkResult(res); err != nil {
-		return int(pLength), err
-	}
-
-	return int(pLength), nil
-}
-
 func DataSourceSetLooping(d any, isLooping bool) error {
 	ptr := getDataSourcePtr(d)
 	res := C.ma_data_source_set_looping(ptr, toMABool32(isLooping))
 	return checkResult(res)
 }
 
-func (d *DataSource) SetLooping(isLooping bool) error {
-	res := C.ma_data_source_set_looping(d.cptr(), toMABool32(isLooping))
-	return checkResult(res)
-}
 
 func DataSourceIsLooping(d any) bool {
 	ptr := getDataSourcePtr(d)
@@ -1284,29 +1152,12 @@ func DataSourceGetRangeInPCMFrames(d any) PCMFrameRange {
 	return rng
 }
 
-func (d *DataSource) GetRangeInPCMFrameRange() PCMFrameRange {
-	var rng PCMFrameRange
-
-	var start, end C.ma_uint64
-
-	C.ma_data_source_get_range_in_pcm_frames(d.cptr(), &start, &end)
-
-	rng.Start = int(start)
-	rng.End = int(end)
-
-	return rng
-}
-
 func DataSourceSetLoopPointInPCMFrames(d any, start, end int) error {
 	ptr := getDataSourcePtr(d)
 	res := C.ma_data_source_set_loop_point_in_pcm_frames(ptr, C.ma_uint64(start), C.ma_uint64(end))
 	return checkResult(res)
 }
 
-func (d *DataSource) SetLoopPointInPCMFrames(start, end int) error {
-	res := C.ma_data_source_set_loop_point_in_pcm_frames(d.cptr(), C.ma_uint64(start), C.ma_uint64(end))
-	return checkResult(res)
-}
 
 type PCMFrameLoopPoint struct {
 	Start, End int
@@ -1323,35 +1174,18 @@ func DataSourceGetLoopPointInPCMFrames(d any) PCMFrameLoopPoint {
 	lp.End = int(end)
 
 	return lp
-
 }
 
-func (d *DataSource) GetLoopPointInPCMFrames() PCMFrameLoopPoint {
-	var lp PCMFrameLoopPoint
-	var start, end C.ma_uint64
-	C.ma_data_source_get_loop_point_in_pcm_frames(d.cptr(), &start, &end)
-
-	lp.Start = int(start)
-	lp.End = int(end)
-
-	return lp
-}
-
-func (d *DataSource) SetCurrent(current *DataSource) error {
-	res := C.ma_data_source_set_current(d.cptr(), current.cptr())
+func DataSourceSetCurrent(d, current any) error {
+	res := C.ma_data_source_set_current(getDataSourcePtr(d), getDataSourcePtr(current))
 	return checkResult(res)
 }
 
-func (d *DataSource) GetCurrent() *DataSource {
-	ptr := C.ma_data_source_get_current(d.cptr())
+func DataSourceGetCurrent(d any) *DataSource {
+	ptr := getDataSourcePtr(d)
 	return &DataSource{
-		src: ptr,
+		src: C.ma_data_source_get_current(ptr),
 	}
-}
-
-func (d *DataSource) SetNext(nextSource *DataSource) error {
-	res := C.ma_data_source_set_next(d.cptr(), nextSource.cptr())
-	return checkResult(res)
 }
 
 func DataSourceSetNext(current, next any) error {
@@ -1366,6 +1200,8 @@ func getDataSourcePtr(d any) unsafe.Pointer {
 		ptr = unsafe.Pointer(ds.cptr())
 	case *Waveform:
 		ptr = unsafe.Pointer(ds.cptr())
+	case *DataSource:
+		ptr = ds.cptr()
 	}
 	return ptr
 }
