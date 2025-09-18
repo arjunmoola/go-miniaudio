@@ -1317,6 +1317,16 @@ func (d *DeviceConfig) SetNoFixedSizedCallback(b bool) {
 	d.config.noFixedSizedCallback = toMABool8(b)
 }
 
+func (d *DeviceConfig) SetPeriodSizeInMilliseconds(m int) {
+	d.config.periodSizeInMilliseconds = C.ma_uint32(m)
+}
+
+func (d *DeviceConfig) GetPeriodSizeInMilliseconds() int {
+	return int(d.config.periodSizeInMilliseconds)
+}
+
+
+
 //TODO: DeviceConfig DataCallback and notification callback
 func (d *DeviceConfig) SetDataCallback(callback DeviceDataProcCallback) {
 	dataCallback = callback
@@ -1535,6 +1545,82 @@ func (d *Device) GetPlaybackFormat() Format {
 
 func (d *Device) GetPlaybackChannels() int {
 	return int(d.device.playback.channels)
+}
+
+func (d *Device) GetPlaybackPeriods() int {
+	return int(d.device.playback.internalPeriods)
+}
+
+func (d *Device) GetPlaybackPeriodSizeInFrames() int {
+	return int(d.device.playback.internalPeriodSizeInFrames)
+}
+
+func (d *Device) GetPlaybackInputCache() *Buffer {
+	ptr := d.device.playback.pInputCache
+	return &Buffer{
+		buffer: ptr,
+	}
+}
+
+func (d *Device) GetPlaybackInputCacheCap() int {
+	return int(d.device.playback.inputCacheCap)
+}
+
+func (d *Device) GetPlaybackInputCacheConsumed() int {
+	return int(d.device.playback.inputCacheConsumed)
+}
+
+func (d *Device) GetPlaybackInputCacheRemaining() int {
+	return int (d.device.playback.inputCacheRemaining)
+}
+
+func (d *Device) GetPlaybackIntermediaryBufferCap() int {
+	return int(d.device.playback.intermediaryBufferCap)
+}
+
+func (d *Device) GetPlaybackIntermediaryBufferLen() int {
+	return int(d.device.playback.intermediaryBufferLen)
+}
+
+func (d *Device) GetPlaybackIntermediaryBuffer() *Buffer {
+	ptr := d.device.playback.pIntermediaryBuffer
+	return &Buffer{
+		buffer: ptr,
+	}
+}
+
+func (d *Device) GetCaptureIntermediaryBufferCap() int {
+	return int(d.device.capture.intermediaryBufferCap)
+}
+
+func (d *Device) GetCaptureIntermediaryBufferLen() int {
+	return int(d.device.capture.intermediaryBufferLen)
+}
+
+func (d *Device) GetCaptureIntermediaryBuffer() *Buffer {
+	return &Buffer{
+		buffer: d.device.capture.pIntermediaryBuffer,
+	}
+}
+
+func (d *Device) GetCaptureSampleRate() int {
+	return int(d.device.capture.internalSampleRate)
+}
+
+func (d *Device) GetCapturePeriodSizeInFrames() int {
+	return int(d.device.capture.internalPeriodSizeInFrames)
+}
+
+func (d *Device) GetCaptureChannels() int {
+	return int(d.device.capture.internalChannels)
+}
+
+func (d *Device) GetCapturePeriods() int {
+	return int(d.device.capture.internalPeriods)
+}
+
+func (d *Device) GetCapturceFormat() Format {
+	return Format(d.device.capture.format)
 }
 
 func (d *Device) GetUserData(userData PCMFrameReader) {
@@ -2096,6 +2182,81 @@ func (e *Encoder) WritePCMFrames(pFramesIn unsafe.Pointer, frameCount int) (int,
 	}
 
 	return int(framesWritten), nil
+}
+
+type AllocationCallbacks struct {
+	ac *C.ma_allocation_callbacks
+}
+
+func (a *AllocationCallbacks) cptr() *C.ma_allocation_callbacks {
+	if a == nil {
+		return nil
+	}
+	return a.ac
+}
+
+type AudioBufferConfig struct {
+	config C.ma_audio_buffer_config
+}
+
+func AudioBufferConfigInit(format Format, channels int, sizeInFrames int, data *Buffer, allocationCallbacks *AllocationCallbacks) *AudioBufferConfig {
+	config := C.ma_audio_buffer_config_init(C.ma_format(format), C.ma_uint32(channels), C.ma_uint64(sizeInFrames), data.cptr(), allocationCallbacks.cptr())
+	return &AudioBufferConfig{
+		config: config,
+	}
+}
+
+func (a *AudioBufferConfig) cptr() *C.ma_audio_buffer_config {
+	if a == nil {
+		return nil
+	}
+	return &a.config
+}
+
+type AudioBuffer struct {
+	buffer *C.ma_audio_buffer
+}
+
+func NewAudioBuffer() *AudioBuffer {
+	buffer := (*C.ma_audio_buffer)(C.malloc(C.sizeof_ma_audio_buffer))
+	return &AudioBuffer{
+		buffer: buffer,
+	}
+}
+
+func (a *AudioBuffer) cptr() *C.ma_audio_buffer {
+	if a == nil {
+		return nil
+	}
+	return a.buffer
+}
+
+func (a *AudioBuffer) Close() {
+	C.free(unsafe.Pointer(a.cptr()))
+}
+
+func (a *AudioBuffer) Init(config *AudioBufferConfig) error {
+	res := C.ma_audio_buffer_init(config.cptr(), a.cptr())
+	return checkResult(res)
+}
+
+func (a *AudioBuffer) InitCopy(config *AudioBufferConfig) error {
+	res := C.ma_audio_buffer_init_copy(config.cptr(), a.cptr())
+	return checkResult(res)
+}
+
+func (a *AudioBuffer) Uninit() {
+	C.ma_audio_buffer_uninit(a.cptr())
+}
+
+func (a *AudioBuffer) ReadPCMFrames(framesOut *Buffer, frameCount int, loop bool) int {
+	res := C.ma_audio_buffer_read_pcm_frames(a.cptr(), framesOut.cptr(), C.ma_uint64(frameCount), toMABool32(loop))
+	return int(res)
+}
+
+func (a *AudioBuffer) SeekToPCMFrame(frameIndex int) error {
+	res := C.ma_audio_buffer_seek_to_pcm_frame(a.cptr(), C.ma_uint64(frameIndex))
+	return checkResult(res)
 }
 
 type WaveformType int
