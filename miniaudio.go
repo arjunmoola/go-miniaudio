@@ -1986,7 +1986,7 @@ func (c *DecoderConfig) cptr() *C.ma_decoder_config {
 	return &c.config
 }
 
-func DecoderConfigInit(outputFormat MAFormat, outputChannels uint32, outputSampleRate uint32) *DecoderConfig {
+func DecoderConfigInit(outputFormat Format, outputChannels int, outputSampleRate int) *DecoderConfig {
 	format := C.ma_format(outputFormat)
 	chs := C.ma_uint32(outputChannels)
 	sampleRate := C.ma_uint32(outputSampleRate)
